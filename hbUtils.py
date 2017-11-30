@@ -104,6 +104,60 @@ def plot_gene_exp(df, gene, groups = None, by_diet = True):
 
     return ax
 
+def run_annotateRepeats(dirpaths, genome = 'mm10', countType = 'genes',
+                        raw = False, print_out = False, norm = None):
+    '''Python wrapper for analyzeRepeates.pl
+    Right now a basic implementation, evnetually add more
+    functionality for variables to be passed'''
+    import subprocess
+    aRCall = ['analyzeRepeats.pl', 'rna', genome, '-count', countType]
+    if raw:
+        aRCall.extend(['-raw'])
+    elif norm !=None:
+        aRCall.extend(['-' + norm])
+    else:
+        aRCall.extend(['-norm', '1e7'])
+    aRCall.extend(['-d'])
+    aRCall.extend(dirpaths)
+    if print_out: print(aRCall)
+    p = subprocess.Popen(aRCall, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+    out, err = p.communicate()
+    
+    return out, err
+
+def run_getDiffExpression(dirpaths, groups, batch = None, genome = 'mm10', countType = 'genes', print_out = False):
+    '''Python wrapper for getDiffExpression.pl
+    groups should be the experimental groups for analysis
+    batch can be used to control for experimental date
+    see documentation for getDiffExprssion.pl for more info
+    
+    eventually implement option to control the algorithm used'''
+    import subprocess
+    
+    # Run annotate repeats with no adjustments
+    out, err = run_annotateRepeats(dirpaths, countType = countType, raw = True)
+    f = open(outdir + '/tmpARForgDE.txt', 'w')
+    f.write(out.decode('utf-8'))
+    f.close()
+    
+    # Run diff exp
+    gDECall = ['getDiffExpression.pl', outdir + '/tmpARForgDE.txt']
+    gDECall.extend(groups)
+    # gDECall.extend(['-edgeR'])
+    if batch is not None:
+        gDECall.extend(['-batch'])
+        gDECall.extend(batch)
+    if print_out: print(gDECall)
+    p = subprocess.Popen(gDECall, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+    gDEOut, gDEErr = p.communicate()
+    
+    subprocess.call(['rm', outdir + '/tmpARForgDE.txt'])
+    return gDEOut, gDEErr
+
+def df_col_subset(x, id_str):
+    '''Returns pandas dataframe with only columns containing id_str'''
+    return x[x.columns[pd.Series(x.columns).str.contains(id_str)]]
+
 def pull_json_db(url):
     ''' pulls json db and returns it as a json object'''
     import requests, sys, json
