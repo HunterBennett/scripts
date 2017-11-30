@@ -1,3 +1,57 @@
+def pathway_gene_heatmap(df, gene_list):
+    '''This function maps the log2fc for each gene within a
+    given pathway and displays them as a heatmap for each
+    strain within the data frame
+
+    df = analyzeRepeats data frame
+    gene_list = python list of gene names'''
+
+    import pandas as pd
+    import seaborn as sns
+    import numpy as np
+    import re
+
+    df = df.copy(deep=True)
+    df = df.set_index(df['Annotation/Divergence'].str.split('|').str[0])
+
+    # process analyzeRepeats final
+    anno_col = 8 # currently 8 annotation columns in output
+    n_samples = df.shape[1] - anno_col # number of samples
+    samples = pd.Series(df.columns[anno_col:]).str.split(' ').str[0].str.split('/').str[-1]
+
+    pattern = r'(^[A-Z]{2,6})_([A-Z]+).*_([A-Z]+)Diet.*_([A-Z0-9]+)Week'
+    discrim = pd.DataFrame(samples.str.findall(pattern, flags=re.IGNORECASE).str[0].tolist())
+
+    # drop uninformative columns and label the
+    # resulting columns as 
+    nunique = discrim.apply(pd.Series.nunique)
+    cols_to_drop = nunique[nunique == 1].index
+    discrim = discrim.drop(cols_to_drop, axis=1)
+    discrim.columns = ['strain', 'diet']
+
+    # convert to labels
+    subj_groups = discrim.apply('_'.join, axis=1)
+
+    # subset only genes within the pathway, then remove the annotation
+    row_index = df.loc[:, 'Annotation/Divergence'].str.match('\||'.join(gene_list.iloc[:,0]), flags=re.IGNORECASE)
+    df2 = df.loc[row_index, :]
+    n_results = df2.shape[0]
+    df2 = df2.iloc[:, anno_col:]
+
+    # calculate log fold changes
+    fc_mat = {}
+    for strain in discrim.strain.drop_duplicates():
+        s_amln = df2.columns.str.contains(strain + '.*AMLN', flags=re.IGNORECASE)
+        s_cntrl = df2.columns.str.contains(strain + '.*Control', flags=re.IGNORECASE)
+        log2fc = np.log2((df2.loc[:, s_amln].mean(axis=1)+1)/(df2.loc[:, s_cntrl].mean(axis=1)+1))
+        fc_mat[strain + '_log2fc'] = log2fc
+    cg = sns.clustermap(pd.DataFrame(fc_mat).T, figsize=(15,3), cmap='BrBG', vmin=-3, vmax=3)
+    cg.ax_row_dendrogram.set_visible(False)
+    cg.ax_col_dendrogram.set_visible(False)
+    cg.cax.set_visible(False)
+
+    return cg
+
 def plot_gene_exp(df, gene, groups = None, by_diet = True):
     '''Function to plot the expression values of a particular gene using the output
     from analyze_repeats.pl in the HOMER package. df is the output of analyze_repeats. 
@@ -10,12 +64,12 @@ def plot_gene_exp(df, gene, groups = None, by_diet = True):
     import re
     import seaborn as sns
 
+    df = df.copy(deep=True)
     anno_col = 8 # currently 8 annotation columns in output
     n_samples = df.shape[1] - anno_col # number of samples
     samples = pd.Series(df.columns[anno_col:])\
             .str.split(' ').str[0]\
             .str.split('/').str[-1]
-
     pattern = r'(^[A-Z]{2,6})_([A-Z]+).*_([A-Z]+)Diet.*_([A-Z0-9]+)Week'
     discrim = pd.DataFrame(samples.str.findall(pattern, flags=re.IGNORECASE).str[0].tolist())
 
@@ -47,7 +101,6 @@ def plot_gene_exp(df, gene, groups = None, by_diet = True):
         ax = sns.factorplot(x="Group", y="Expression",
                    data=df2, kind="bar", col='Gene', capsize=0.1)
         ax.set_xticklabels(rotation=30)
-
 
     return ax
 
@@ -87,7 +140,7 @@ def pull_go_terms(term, taxon_id = None, product_type = None):
         term = str(term)
 
     requestURL = "https://www.ebi.ac.uk/QuickGO/services/annotation/search?goId=GO%3A" + term 
-    if taxon_id != None: requestURL += "&taxonId=" + str(taxon_id)
+    if taxon_id != None: requestURL += "&taxonId=" + str(taxon)
     if product_type != None: requestURl += "&geneProductType=" + str(product_type)
     requestURL += "&limit=100"
 
