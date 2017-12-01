@@ -156,6 +156,8 @@ def run_getDiffExpression(dirpaths, groups, batch = None, genome = 'mm10', count
 
 def df_col_subset(x, id_str):
     '''Returns pandas dataframe with only columns containing id_str'''
+    import pandas as pd
+    import re
     return x[x.columns[pd.Series(x.columns).str.contains(id_str)]]
 
 def pull_json_db(url):
