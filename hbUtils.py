@@ -52,7 +52,7 @@ def pathway_gene_heatmap(df, gene_list):
 
     return cg
 
-def plot_gene_exp(df, gene, groups = None, by_diet = True):
+def plot_gene_exp(df, gene, plot_style='bar', groups = None, by_refseq = False, by_diet = True):
     '''Function to plot the expression values of a particular gene using the output
     from analyze_repeats.pl in the HOMER package. df is the output of analyze_repeats. 
     Currently function will try and guess the best groups
@@ -65,12 +65,15 @@ def plot_gene_exp(df, gene, groups = None, by_diet = True):
     import seaborn as sns
 
     df = df.copy(deep=True)
+    df.columns = pd.Series(df.columns)\
+        .str.split(r" \(").str[0]\
+        .str.split('/.*/').str[-1]
     anno_col = 8 # currently 8 annotation columns in output
     n_samples = df.shape[1] - anno_col # number of samples
     samples = pd.Series(df.columns[anno_col:])\
             .str.split(' ').str[0]\
             .str.split('/').str[-1]
-    pattern = r'(^[A-Z]{2,6})_([A-Z]+).*_([A-Z]+)Diet.*_([A-Z0-9]+)Week'
+    pattern = r'(^[A-Z]{2,6})[_-]([A-Z]+).*[_-]([A-Z]+)Diet.*[_-]([A-Z0-9]+)Week'
     discrim = pd.DataFrame(samples.str.findall(pattern, flags=re.IGNORECASE).str[0].tolist())
 
     # drop uninformative columns
@@ -82,24 +85,32 @@ def plot_gene_exp(df, gene, groups = None, by_diet = True):
     subj_groups = discrim.apply('_'.join, axis=1)
 
     # create df for plotting
-    df.loc[:, 'gene'] = df.loc[:, 'Annotation/Divergence'].str.split('|').str[0]
-    row_index = df.loc[:, 'Annotation/Divergence'].str.contains(gene+'\|', flags=re.IGNORECASE)
+    df.loc[:, 'Gene'] = df.loc[:, 'Annotation/Divergence'].str.split('|').str[0]
+    if by_refseq:
+        row_index = df.loc[:, 'Transcript/RepeatID'].str.contains(gene, flags=re.IGNORECASE)
+        plot_col = 'Transcript/RepeatID'
+    else:
+        row_index = df.loc[:, 'Annotation/Divergence'].str.contains(gene+'\|', flags=re.IGNORECASE)
+        plot_col = 'Gene'
     df2 = df.loc[row_index, :]
     n_results = df2.shape[0]
-    df2 = df2.iloc[:, anno_col:]
-    df2.columns = subj_groups.append(pd.Series('Gene'))
-    df2 = df2.melt(id_vars = 'Gene', var_name='Group', value_name='Expression')
+    df3 = df2.iloc[:, anno_col:(anno_col + n_samples)]
+    # df3.columns = subj_groups.append(pd.Series(plot_col))
+    df3.loc[:, plot_col] = pd.Series(df2.loc[:, plot_col], index = df2.index)
+    df3 = df3.melt(id_vars = plot_col, var_name='Group', value_name='Expression')
 
 
     if by_diet:
-        df2['diet'] = df2['Group'].str.extract('(AMLN|Control)', flags=re.IGNORECASE, expand=True)
-        df2['strain'] = df2['Group'].str.split('_').str[0]
+        df3['diet'] = df3['Group'].str.extract('(AMLN|Control)', flags=re.IGNORECASE, expand=True)
+        df3['strain'] = df3['Group'].str.split('_').str[0]
         ax = sns.factorplot(x="strain", y="Expression", hue="diet",
-                   data=df2, kind="bar", col='Gene', capsize=0.1)
+                   data=df3, kind=plot_style, col=plot_col, # capsize=0.1,
+                   sharey=False, col_wrap=3)
     else:
         # plot the data
         ax = sns.factorplot(x="Group", y="Expression",
-                   data=df2, kind="bar", col='Gene', capsize=0.1)
+                   data=df3, kind=plot_style, col=plot_col, # capsize=0.1,
+                   sharey=False)
         ax.set_xticklabels(rotation=30)
 
     return ax
@@ -158,7 +169,7 @@ def df_col_subset(x, id_str):
     '''Returns pandas dataframe with only columns containing id_str'''
     import pandas as pd
     import re
-    return x[x.columns[pd.Series(x.columns).str.contains(id_str)]]
+    return x[x.columns[pd.Series(x.columns).str.contains(id_str, flags=re.IGNORECASE)]]
 
 def pull_json_db(url):
     ''' pulls json db and returns it as a json object'''
